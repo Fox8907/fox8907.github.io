@@ -21,6 +21,7 @@ button{border:none;border-radius:5px;padding:7px 14px;font-size:12px;cursor:poin
 .btn-purple{background:#9147ff;color:#fff}.btn-purple:hover{background:#772ce8}
 .btn-purple:disabled{background:#3a3a3d;color:#adadb8;cursor:not-allowed}
 .btn-red{background:#e91916;color:#fff}.btn-red:hover{background:#bf0e0b}
+.btn-green{background:#00b159;color:#fff}.btn-green:hover{background:#009146}
 .btn-ghost{background:transparent;border:0.5px solid #3a3a3d;color:#adadb8}.btn-ghost:hover{border-color:#9147ff;color:#9147ff}
 .btn-twitch{background:#9147ff;color:#fff;display:flex;align-items:center;gap:8px;padding:9px 18px;font-size:13px;border-radius:6px;width:100%;justify-content:center}
 .btn-twitch:hover{background:#772ce8}
@@ -34,7 +35,7 @@ button{border:none;border-radius:5px;padding:7px 14px;font-size:12px;cursor:poin
 .transcript{background:#0e0e10;border:0.5px solid #3a3a3d;border-radius:5px;padding:8px;font-size:12px;color:#adadb8;font-style:italic;min-height:36px;margin-bottom:10px}
 .log{background:#0e0e10;border:0.5px solid #3a3a3d;border-radius:5px;height:180px;overflow-y:auto;padding:8px;font-size:11px;font-family:monospace}
 .le{padding:1px 0;border-bottom:0.5px solid #1f1f23}
-.le.cmd{color:#9147ff}.le.chat{color:#00b159}.le.err{color:#e91916}.le.obs{color:#ff8c00}.le.info{color:#adadb8}
+.le.cmd{color:#9147ff}.le.chat{color:#00b159}.le.err{color:#e91916}.le.obs{color:#ff8c00}.le.info{color:#adadb8}.le.match{color:#ffb347}
 .commands-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .cmd-card{background:#0e0e10;border:0.5px solid #3a3a3d;border-radius:5px;padding:8px}
 .cmd-phrase{font-size:11px;font-weight:600;color:#9147ff;margin-bottom:2px}
@@ -55,12 +56,40 @@ input[type="number"]{width:70px}
 .auth-section{text-align:center;padding:8px 0}
 .auth-info{font-size:11px;color:#adadb8;margin-bottom:10px;line-height:1.5}
 .scope-list{font-size:10px;color:#7a7a80;margin-top:6px}
+
+/* Confirm dialog */
+.confirm-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:100;display:none}
+.confirm-box{background:#18181b;border:1px solid #9147ff;border-radius:10px;padding:20px;width:300px;text-align:center}
+.confirm-box h3{font-size:14px;color:#efeff1;margin-bottom:6px}
+.confirm-box p{font-size:12px;color:#adadb8;margin-bottom:6px}
+.confirm-username{font-size:18px;font-weight:700;color:#9147ff;margin:10px 0}
+.confirm-heard{font-size:11px;color:#7a7a80;margin-bottom:14px}
+.confirm-actions{display:flex;gap:10px;justify-content:center}
+
+/* Chatters panel */
+.chatters-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.chatters-list{background:#0e0e10;border:0.5px solid #3a3a3d;border-radius:5px;max-height:80px;overflow-y:auto;padding:4px 6px;font-size:11px;color:#adadb8;font-family:monospace}
+.chatter-tag{display:inline-block;background:#1a1a1d;border:0.5px solid #3a3a3d;border-radius:3px;padding:1px 5px;margin:1px;font-size:10px;color:#adadb8}
 </style>
 </head>
 <body>
 
 <h1>Voice Commander</h1>
 <p class="sub">Voice-activated Twitch moderation & stream control</p>
+
+<!-- Confirm Dialog -->
+<div class="confirm-overlay" id="confirm-overlay">
+  <div class="confirm-box">
+    <h3 id="confirm-title">Confirm Action</h3>
+    <p id="confirm-action-label">Did you mean:</p>
+    <div class="confirm-username" id="confirm-username">—</div>
+    <div class="confirm-heard" id="confirm-heard">Heard: "—"</div>
+    <div class="confirm-actions">
+      <button class="btn-green" onclick="confirmAction(true)">Yes, do it</button>
+      <button class="btn-ghost" onclick="confirmAction(false)">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <div class="status-bar">
   <div class="dot" id="mic-dot"></div>
@@ -83,7 +112,7 @@ input[type="number"]{width:70px}
       <p class="scope-list">Requests: chat, moderation, channel management</p>
     </div>
     <div id="auth-logged-in" style="display:none">
-      <div class="user-pill" id="user-pill">
+      <div class="user-pill">
         <img class="user-avatar" id="user-avatar" src="" alt="" />
         <div>
           <div class="user-name" id="user-name">—</div>
@@ -115,6 +144,18 @@ input[type="number"]{width:70px}
       <span class="conn-status conn-no" id="obs-status-text">● Not connected</span>
     </div>
   </div>
+</div>
+
+<!-- Active Chatters -->
+<div class="card" style="margin-bottom:12px">
+  <div class="chatters-bar">
+    <h2 style="margin:0">Active Chatters</h2>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span style="font-size:10px;color:#7a7a80" id="chatter-count">0 users</span>
+      <button class="btn-ghost btn-sm" onclick="refreshChatters()">Refresh</button>
+    </div>
+  </div>
+  <div class="chatters-list" id="chatters-list">Connect to chat to see active viewers...</div>
 </div>
 
 <!-- Commands Reference -->
@@ -151,357 +192,415 @@ input[type="number"]{width:70px}
 </div>
 
 <script>
-// ── Config ─────────────────────────────────────────────────────────────────
 const CLIENT_ID = 'bntjnscnzznfat54fxl91dboqb4rz3';
 const REDIRECT_URI = location.href.split('?')[0].split('#')[0];
-const SCOPES = [
-  'chat:read','chat:edit',
-  'moderator:manage:banned_users',
-  'moderator:read:chatters',
-  'channel:manage:raids',
-  'channel:manage:polls',
-  'user:read:email'
-].join(' ');
+const SCOPES = ['chat:read','chat:edit','moderator:manage:banned_users','moderator:read:chatters','channel:manage:raids','channel:manage:polls','user:read:email'].join(' ');
 
-// ── State ──────────────────────────────────────────────────────────────────
-let accessToken = null;
-let userId = null;
-let userLogin = null;
-let recognition = null;
-let isListening = false;
-let twitchSocket = null;
-let twitchConnected = false;
-let obsSocket = null;
-let obsConnected = false;
-let mainScene = null;
-let obsMessageId = 1;
-let obsPendingRequests = {};
+let accessToken=null, userId=null, userLogin=null;
+let recognition=null, isListening=false;
+let twitchSocket=null, twitchConnected=false;
+let obsSocket=null, obsConnected=false, mainScene=null;
+let obsMessageId=1, obsPendingRequests={};
+let chatters=new Set(); // live chatter usernames (lowercase)
+let pendingAction=null; // {fn, username, heard, title}
+let chattersRefreshTimer=null;
 
 // ── Logging ────────────────────────────────────────────────────────────────
-function log(msg, cls='info') {
-  const el = document.getElementById('log');
-  const d = document.createElement('div');
-  d.className = `le ${cls}`;
-  d.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-  el.appendChild(d);
-  el.scrollTop = el.scrollHeight;
+function log(msg,cls='info'){
+  const el=document.getElementById('log');
+  const d=document.createElement('div');
+  d.className=`le ${cls}`;
+  d.textContent=`[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.appendChild(d); el.scrollTop=el.scrollHeight;
 }
-function clearLog() { document.getElementById('log').innerHTML = ''; }
-
-function setMic(state, text) {
-  const dot = document.getElementById('mic-dot');
-  dot.className = 'dot' + (state==='listening'?' listening':state==='error'?' error':'');
-  document.getElementById('status-text').textContent = text;
+function clearLog(){document.getElementById('log').innerHTML='';}
+function setMic(state,text){
+  const dot=document.getElementById('mic-dot');
+  dot.className='dot'+(state==='listening'?' listening':state==='error'?' error':'');
+  document.getElementById('status-text').textContent=text;
 }
 
-// ── OAuth (Implicit Grant — no server needed) ──────────────────────────────
-function startOAuth() {
-  // Store a random state value to verify on return
-  const state = Math.random().toString(36).slice(2);
-  sessionStorage.setItem('oauth_state', state);
-  const url = `https://id.twitch.tv/oauth2/authorize`
-    + `?client_id=${CLIENT_ID}`
-    + `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}`
-    + `&response_type=token`
-    + `&scope=${encodeURIComponent(SCOPES)}`
-    + `&state=${state}`
-    + `&force_verify=false`;
-  window.location.href = url;
+// ── Fuzzy username matching ────────────────────────────────────────────────
+// Normalise: remove spaces, lowercase, collapse letters (e.g. spoken "s t r e a m" → "stream")
+function normalise(str){
+  return str.toLowerCase()
+    .replace(/\s+/g,'')           // join spaced letters: "s t r e a m" → "stream"
+    .replace(/[^a-z0-9_]/g,'')   // strip non-username chars
+    .replace(/zero/g,'0').replace(/one/g,'1').replace(/two/g,'2')
+    .replace(/three/g,'3').replace(/four/g,'4').replace(/five/g,'5')
+    .replace(/six/g,'6').replace(/seven/g,'7').replace(/eight/g,'8').replace(/nine/g,'9');
 }
 
-function parseOAuthCallback() {
-  const hash = window.location.hash.substring(1);
-  if (!hash) return;
-  const params = new URLSearchParams(hash);
-  const token = params.get('access_token');
-  const state = params.get('state');
-  if (!token) return;
-  // Clear hash from URL cleanly
-  history.replaceState(null, '', window.location.pathname);
-  accessToken = token;
-  sessionStorage.setItem('vc_token', token);
-  fetchUserInfo();
+// Levenshtein distance
+function levenshtein(a,b){
+  const m=a.length, n=b.length;
+  const dp=Array.from({length:m+1},(_,i)=>Array.from({length:n+1},(_,j)=>i===0?j:j===0?i:0));
+  for(let i=1;i<=m;i++) for(let j=1;j<=n;j++)
+    dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+  return dp[m][n];
 }
 
-function tryRestoreSession() {
-  const saved = sessionStorage.getItem('vc_token');
-  if (saved) { accessToken = saved; fetchUserInfo(); }
+// Find best matching chatter for a spoken string
+// Returns {username, score} or null
+function findBestMatch(spoken){
+  const norm = normalise(spoken);
+  if(!norm) return null;
+
+  let best=null, bestScore=Infinity;
+
+  for(const chatter of chatters){
+    const cn = normalise(chatter);
+    // Exact match wins immediately
+    if(cn===norm) return {username:chatter, score:0};
+
+    // Also try if chatter name starts with or contains the spoken string
+    const containsScore = cn.includes(norm) ? 0.5 : Infinity;
+
+    const dist = levenshtein(norm, cn);
+    // Normalise by length so short names don't get unfair advantage
+    const score = Math.min(dist / Math.max(cn.length, norm.length), containsScore);
+
+    if(score < bestScore){ bestScore=score; best=chatter; }
+  }
+
+  // Only accept if score is reasonable (< 0.55 similarity threshold)
+  if(best && bestScore < 0.55) return {username:best, score:bestScore};
+  return null;
 }
 
-async function fetchUserInfo() {
-  try {
-    const res = await fetch('https://api.twitch.tv/helix/users', {
-      headers: { 'Authorization': `Bearer ${accessToken}`, 'Client-Id': CLIENT_ID }
-    });
-    if (!res.ok) { logout(); return; }
-    const data = await res.json();
-    const user = data.data[0];
-    userId    = user.id;
-    userLogin = user.login;
-    document.getElementById('user-avatar').src = user.profile_image_url;
-    document.getElementById('user-name').textContent = user.display_name;
-    document.getElementById('auth-logged-out').style.display = 'none';
-    document.getElementById('auth-logged-in').style.display  = 'block';
-    document.getElementById('listen-btn').disabled = false;
-    setMic('', 'Logged in as ' + user.display_name + ' — connect chat to begin');
-    log(`Logged in as ${user.display_name}`, 'chat');
-  } catch(e) {
-    log('Failed to fetch user info: ' + e.message, 'err');
+// ── Confirm dialog ─────────────────────────────────────────────────────────
+function showConfirm(title, username, heard, actionFn){
+  pendingAction={fn:actionFn, username};
+  document.getElementById('confirm-title').textContent=title;
+  document.getElementById('confirm-username').textContent=username;
+  document.getElementById('confirm-heard').textContent=`Heard: "${heard}"`;
+  document.getElementById('confirm-overlay').style.display='flex';
+}
+function confirmAction(yes){
+  document.getElementById('confirm-overlay').style.display='none';
+  if(yes && pendingAction) pendingAction.fn(pendingAction.username);
+  pendingAction=null;
+}
+
+// ── Resolve username with fuzzy match + confirm ────────────────────────────
+function resolveWithConfirm(spoken, title, actionFn){
+  const norm = normalise(spoken);
+  // Direct exact match in chatters — no confirm needed
+  if(chatters.has(norm)){ actionFn(norm); return; }
+
+  const match = findBestMatch(spoken);
+  if(match){
+    if(match.score===0){ actionFn(match.username); return; }
+    log(`Fuzzy match: "${spoken}" → "${match.username}" (score ${match.score.toFixed(2)})`,'match');
+    showConfirm(title, match.username, spoken, actionFn);
+  } else {
+    // No match in chatters — fall back to spoken word stitched together
+    const fallback = norm || spoken.replace(/\s/g,'');
+    log(`No chatter match for "${spoken}", using "${fallback}" directly`,'info');
+    showConfirm(title, fallback, spoken, actionFn);
   }
 }
 
-function logout() {
-  accessToken = null; userId = null; userLogin = null;
-  sessionStorage.removeItem('vc_token');
-  document.getElementById('auth-logged-out').style.display = 'block';
-  document.getElementById('auth-logged-in').style.display  = 'none';
-  document.getElementById('listen-btn').disabled = true;
-  if (twitchSocket) twitchSocket.close();
-  setMic('', 'Login with Twitch to begin');
-  log('Logged out.', 'info');
+// ── Chatters (Helix API) ───────────────────────────────────────────────────
+async function refreshChatters(){
+  if(!accessToken||!userId) return;
+  try{
+    let cursor='', all=[];
+    do{
+      const url=`https://api.twitch.tv/helix/chat/chatters?broadcaster_id=${userId}&moderator_id=${userId}&first=1000`+(cursor?`&after=${cursor}`:'');
+      const res=await fetch(url,{headers:{'Authorization':`Bearer ${accessToken}`,'Client-Id':CLIENT_ID}});
+      const data=await res.json();
+      if(!data.data) break;
+      all=all.concat(data.data.map(c=>c.user_login));
+      cursor=data.pagination?.cursor||'';
+    } while(cursor);
+
+    chatters=new Set(all);
+    document.getElementById('chatter-count').textContent=`${chatters.size} users`;
+    const list=document.getElementById('chatters-list');
+    if(chatters.size===0){ list.textContent='No active chatters found.'; return; }
+    list.innerHTML=[...chatters].map(c=>`<span class="chatter-tag">${c}</span>`).join('');
+    log(`Chatters refreshed: ${chatters.size} active`,'info');
+  } catch(e){ log('Chatters fetch error: '+e.message,'err'); }
 }
 
-// ── Twitch Chat (IRC over WS) ──────────────────────────────────────────────
-function connectChat() {
-  if (!accessToken || !userLogin) { log('Not logged in.','err'); return; }
-  if (twitchSocket) twitchSocket.close();
-  twitchSocket = new WebSocket('wss://irc-ws.chat.twitch.tv:443');
-  twitchSocket.onopen = () => {
+// ── OAuth ──────────────────────────────────────────────────────────────────
+function startOAuth(){
+  const state=Math.random().toString(36).slice(2);
+  sessionStorage.setItem('oauth_state',state);
+  window.location.href=`https://id.twitch.tv/oauth2/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&response_type=token&scope=${encodeURIComponent(SCOPES)}&state=${state}&force_verify=false`;
+}
+function parseOAuthCallback(){
+  const hash=window.location.hash.substring(1);
+  if(!hash) return;
+  const params=new URLSearchParams(hash);
+  const token=params.get('access_token');
+  if(!token) return;
+  history.replaceState(null,'',window.location.pathname);
+  accessToken=token;
+  sessionStorage.setItem('vc_token',token);
+  fetchUserInfo();
+}
+function tryRestoreSession(){
+  const saved=sessionStorage.getItem('vc_token');
+  if(saved){accessToken=saved; fetchUserInfo();}
+}
+async function fetchUserInfo(){
+  try{
+    const res=await fetch('https://api.twitch.tv/helix/users',{headers:{'Authorization':`Bearer ${accessToken}`,'Client-Id':CLIENT_ID}});
+    if(!res.ok){logout();return;}
+    const data=await res.json();
+    const user=data.data[0];
+    userId=user.id; userLogin=user.login;
+    document.getElementById('user-avatar').src=user.profile_image_url;
+    document.getElementById('user-name').textContent=user.display_name;
+    document.getElementById('auth-logged-out').style.display='none';
+    document.getElementById('auth-logged-in').style.display='block';
+    document.getElementById('listen-btn').disabled=false;
+    setMic('','Logged in as '+user.display_name+' — connect chat to begin');
+    log(`Logged in as ${user.display_name}`,'chat');
+  } catch(e){log('User info error: '+e.message,'err');}
+}
+function logout(){
+  accessToken=null; userId=null; userLogin=null;
+  sessionStorage.removeItem('vc_token');
+  document.getElementById('auth-logged-out').style.display='block';
+  document.getElementById('auth-logged-in').style.display='none';
+  document.getElementById('listen-btn').disabled=true;
+  if(twitchSocket) twitchSocket.close();
+  if(chattersRefreshTimer) clearInterval(chattersRefreshTimer);
+  chatters=new Set();
+  setMic('','Login with Twitch to begin');
+  log('Logged out.','info');
+}
+
+// ── Twitch Chat IRC ────────────────────────────────────────────────────────
+function connectChat(){
+  if(!accessToken||!userLogin){log('Not logged in.','err');return;}
+  if(twitchSocket) twitchSocket.close();
+  twitchSocket=new WebSocket('wss://irc-ws.chat.twitch.tv:443');
+  twitchSocket.onopen=()=>{
     twitchSocket.send('CAP REQ :twitch.tv/tags twitch.tv/commands');
     twitchSocket.send(`PASS oauth:${accessToken}`);
     twitchSocket.send(`NICK ${userLogin}`);
     twitchSocket.send(`JOIN #${userLogin}`);
   };
-  twitchSocket.onmessage = e => {
-    if (e.data.includes('PING')) { twitchSocket.send('PONG :tmi.twitch.tv'); return; }
-    if (e.data.includes('Welcome, GLHF!') || e.data.includes('001')) {
-      twitchConnected = true;
-      document.getElementById('twitch-status-text').textContent = '● Chat connected';
-      document.getElementById('twitch-status-text').className = 'conn-status conn-ok';
-      setMic('', `Ready — listening for commands in #${userLogin}`);
-      log(`Chat connected to #${userLogin}`, 'chat');
+  twitchSocket.onmessage=e=>{
+    if(e.data.includes('PING')){twitchSocket.send('PONG :tmi.twitch.tv');return;}
+    // Track chatters from live messages
+    const msgMatch=e.data.match(/display-name=([^;]+);/);
+    if(msgMatch && e.data.includes('PRIVMSG')){
+      chatters.add(msgMatch[1].toLowerCase());
+      document.getElementById('chatter-count').textContent=`${chatters.size} users`;
     }
-    if (e.data.includes('Login authentication failed')) {
-      log('Chat auth failed — try logging out and back in.','err');
-      logout();
+    if(e.data.includes('Welcome, GLHF!')||e.data.includes('001')){
+      twitchConnected=true;
+      document.getElementById('twitch-status-text').textContent='● Chat connected';
+      document.getElementById('twitch-status-text').className='conn-status conn-ok';
+      setMic('',`Ready — listening for commands in #${userLogin}`);
+      log(`Chat connected to #${userLogin}`,'chat');
+      // Initial chatter fetch + auto-refresh every 60s
+      refreshChatters();
+      if(chattersRefreshTimer) clearInterval(chattersRefreshTimer);
+      chattersRefreshTimer=setInterval(refreshChatters,60000);
     }
+    if(e.data.includes('Login authentication failed')){log('Chat auth failed.','err');logout();}
   };
-  twitchSocket.onclose = () => {
-    twitchConnected = false;
-    document.getElementById('twitch-status-text').textContent = '● Chat disconnected';
-    document.getElementById('twitch-status-text').className = 'conn-status conn-no';
+  twitchSocket.onclose=()=>{
+    twitchConnected=false;
+    document.getElementById('twitch-status-text').textContent='● Chat disconnected';
+    document.getElementById('twitch-status-text').className='conn-status conn-no';
     log('Chat disconnected.','info');
   };
 }
-
-function sendChat(msg) {
-  if (twitchSocket && twitchSocket.readyState === WebSocket.OPEN) {
+function sendChat(msg){
+  if(twitchSocket&&twitchSocket.readyState===WebSocket.OPEN){
     twitchSocket.send(`PRIVMSG #${userLogin} :${msg}`);
-    log(`Chat → ${msg}`, 'chat');
-  } else {
-    log(`[No chat] Would send: ${msg}`, 'info');
-  }
+    log(`Chat → ${msg}`,'chat');
+  } else log(`[No chat] ${msg}`,'info');
 }
 
 // ── Twitch Helix API ───────────────────────────────────────────────────────
-async function twitchAPI(method, endpoint, body) {
-  if (!accessToken) { log('Not authenticated.','err'); return null; }
-  try {
-    const res = await fetch(`https://api.twitch.tv/helix/${endpoint}`, {
+async function twitchAPI(method,endpoint,body){
+  if(!accessToken){log('Not authenticated.','err');return null;}
+  try{
+    const res=await fetch(`https://api.twitch.tv/helix/${endpoint}`,{
       method,
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Client-Id': CLIENT_ID,
-        'Content-Type': 'application/json'
-      },
-      body: body ? JSON.stringify(body) : undefined
+      headers:{'Authorization':`Bearer ${accessToken}`,'Client-Id':CLIENT_ID,'Content-Type':'application/json'},
+      body:body?JSON.stringify(body):undefined
     });
-    if (res.status === 204) return {};
-    const json = await res.json();
-    if (!res.ok) { log(`API error: ${json.message || res.status}`, 'err'); return null; }
+    if(res.status===204) return {};
+    const json=await res.json();
+    if(!res.ok){log(`API error: ${json.message||res.status}`,'err');return null;}
     return json;
-  } catch(e) { log(`API error: ${e.message}`, 'err'); return null; }
+  } catch(e){log(`API error: ${e.message}`,'err');return null;}
 }
-
-async function resolveUserId(username) {
-  const data = await twitchAPI('GET', `users?login=${username}`);
-  if (!data || !data.data || !data.data[0]) { log(`User not found: ${username}`,'err'); return null; }
+async function resolveUserId(username){
+  const data=await twitchAPI('GET',`users?login=${username}`);
+  if(!data||!data.data||!data.data[0]){log(`User not found: ${username}`,'err');return null;}
   return data.data[0].id;
 }
 
-async function banUser(username) {
-  const uid = await resolveUserId(username);
-  if (!uid) return;
-  const r = await twitchAPI('POST', `moderation/bans?broadcaster_id=${userId}&moderator_id=${userId}`, {
-    data: { user_id: uid, reason: 'Banned via Voice Commander' }
-  });
-  if (r !== null) { log(`Banned: ${username}`,'cmd'); sendChat(`/ban ${username}`); }
+async function banUser(username){
+  const uid=await resolveUserId(username); if(!uid) return;
+  const r=await twitchAPI('POST',`moderation/bans?broadcaster_id=${userId}&moderator_id=${userId}`,{data:{user_id:uid,reason:'Banned via Voice Commander'}});
+  if(r!==null){log(`Banned: ${username}`,'cmd');}
 }
-
-async function timeoutUser(username) {
-  const dur = parseInt(document.getElementById('timeout-dur').value) || 600;
-  const uid = await resolveUserId(username);
-  if (!uid) return;
-  const r = await twitchAPI('POST', `moderation/bans?broadcaster_id=${userId}&moderator_id=${userId}`, {
-    data: { user_id: uid, duration: dur, reason: 'Timed out via Voice Commander' }
-  });
-  if (r !== null) log(`Timeout ${dur}s: ${username}`,'cmd');
+async function timeoutUser(username){
+  const dur=parseInt(document.getElementById('timeout-dur').value)||600;
+  const uid=await resolveUserId(username); if(!uid) return;
+  const r=await twitchAPI('POST',`moderation/bans?broadcaster_id=${userId}&moderator_id=${userId}`,{data:{user_id:uid,duration:dur,reason:'Timed out via Voice Commander'}});
+  if(r!==null) log(`Timeout ${dur}s: ${username}`,'cmd');
 }
-
-async function unbanUser(username) {
-  const uid = await resolveUserId(username);
-  if (!uid) return;
-  const r = await twitchAPI('DELETE', `moderation/bans?broadcaster_id=${userId}&moderator_id=${userId}&user_id=${uid}`);
-  if (r !== null) log(`Unbanned: ${username}`,'cmd');
+async function unbanUser(username){
+  const uid=await resolveUserId(username); if(!uid) return;
+  await twitchAPI('DELETE',`moderation/bans?broadcaster_id=${userId}&moderator_id=${userId}&user_id=${uid}`);
+  log(`Unbanned: ${username}`,'cmd');
 }
-
-function shoutout(username) {
+function shoutout(username){
   sendChat(`PogChamp Big shoutout to @${username}! Go give them a follow → twitch.tv/${username} 🔥`);
   log(`Shoutout: ${username}`,'cmd');
 }
-
-function raid(username) {
+function raid(username){
   sendChat(`Chat, we're raiding @${username}! Let's go! 🔥`);
   log(`Raid call: ${username}`,'cmd');
 }
-
-function startPoll(question, options) {
-  if (options.length < 2) { log('Poll needs at least 2 options.','err'); return; }
-  let msg = `📊 POLL: ${question} — ` + options.map((o,i)=>`${i+1}) ${o}`).join(' | ') + ' — Vote now!';
-  sendChat(msg);
+function startPoll(question,options){
+  if(options.length<2){log('Poll needs at least 2 options.','err');return;}
+  sendChat(`📊 POLL: ${question} — `+options.map((o,i)=>`${i+1}) ${o}`).join(' | ')+' — Vote now!');
   log(`Poll: ${question}`,'cmd');
 }
 
 // ── OBS WebSocket v5 ───────────────────────────────────────────────────────
-function connectOBS() {
-  const url = document.getElementById('obs-url').value.trim();
-  const pass = document.getElementById('obs-pass').value.trim();
-  if (obsSocket) obsSocket.close();
-  obsSocket = new WebSocket(url);
-  obsSocket.onopen = () => log('OBS connecting...','obs');
-  obsSocket.onmessage = e => {
-    const msg = JSON.parse(e.data);
-    if (msg.op === 0) {
-      const auth = { op: 1, d: { rpcVersion: 1 } };
-      if (pass && msg.d.authentication) auth.d.authentication = pass;
+function connectOBS(){
+  const url=document.getElementById('obs-url').value.trim();
+  const pass=document.getElementById('obs-pass').value.trim();
+  if(obsSocket) obsSocket.close();
+  obsSocket=new WebSocket(url);
+  obsSocket.onopen=()=>log('OBS connecting...','obs');
+  obsSocket.onmessage=e=>{
+    const msg=JSON.parse(e.data);
+    if(msg.op===0){
+      const auth={op:1,d:{rpcVersion:1}};
+      if(pass&&msg.d.authentication) auth.d.authentication=pass;
       obsSocket.send(JSON.stringify(auth));
     }
-    if (msg.op === 2) {
-      obsConnected = true;
-      document.getElementById('obs-status-text').textContent = '● Connected';
-      document.getElementById('obs-status-text').className = 'conn-status conn-ok';
+    if(msg.op===2){
+      obsConnected=true;
+      document.getElementById('obs-status-text').textContent='● Connected';
+      document.getElementById('obs-status-text').className='conn-status conn-ok';
       log('OBS connected!','obs');
-      obsRequest('GetCurrentProgramScene').then(r => {
-        if (r && r.sceneName) { mainScene = r.sceneName; log(`Main scene: ${mainScene}`,'obs'); }
-      });
+      obsRequest('GetCurrentProgramScene').then(r=>{if(r&&r.sceneName){mainScene=r.sceneName;log(`Main scene: ${mainScene}`,'obs');}});
     }
-    if (msg.op === 7) {
-      const id = msg.d.requestId;
-      if (obsPendingRequests[id]) { obsPendingRequests[id](msg.d.responseData); delete obsPendingRequests[id]; }
+    if(msg.op===7){
+      const id=msg.d.requestId;
+      if(obsPendingRequests[id]){obsPendingRequests[id](msg.d.responseData);delete obsPendingRequests[id];}
     }
   };
-  obsSocket.onclose = () => {
-    obsConnected = false;
-    document.getElementById('obs-status-text').textContent = '● Disconnected';
-    document.getElementById('obs-status-text').className = 'conn-status conn-no';
+  obsSocket.onclose=()=>{
+    obsConnected=false;
+    document.getElementById('obs-status-text').textContent='● Disconnected';
+    document.getElementById('obs-status-text').className='conn-status conn-no';
     log('OBS disconnected.','obs');
   };
-  obsSocket.onerror = () => log('OBS connection failed. Is OBS running with WebSocket enabled?','err');
+  obsSocket.onerror=()=>log('OBS connection failed.','err');
 }
-
-function obsRequest(type, data={}) {
-  return new Promise(resolve => {
-    if (!obsSocket || obsSocket.readyState !== WebSocket.OPEN) { resolve(null); return; }
-    const id = String(obsMessageId++);
-    obsPendingRequests[id] = resolve;
-    obsSocket.send(JSON.stringify({ op: 6, d: { requestType: type, requestId: id, requestData: data } }));
-    setTimeout(() => { if (obsPendingRequests[id]) { delete obsPendingRequests[id]; resolve(null); } }, 3000);
+function obsRequest(type,data={}){
+  return new Promise(resolve=>{
+    if(!obsSocket||obsSocket.readyState!==WebSocket.OPEN){resolve(null);return;}
+    const id=String(obsMessageId++);
+    obsPendingRequests[id]=resolve;
+    obsSocket.send(JSON.stringify({op:6,d:{requestType:type,requestId:id,requestData:data}}));
+    setTimeout(()=>{if(obsPendingRequests[id]){delete obsPendingRequests[id];resolve(null);}},3000);
   });
 }
-
-async function switchScene(sceneName) {
-  if (!obsConnected) { log('OBS not connected.','err'); return; }
-  await obsRequest('SetCurrentProgramScene', { sceneName });
+async function switchScene(sceneName){
+  if(!obsConnected){log('OBS not connected.','err');return;}
+  await obsRequest('SetCurrentProgramScene',{sceneName});
   log(`OBS → ${sceneName}`,'obs');
 }
 
 // ── Voice ──────────────────────────────────────────────────────────────────
-function toggleListening() { isListening ? stopListening() : startListening(); }
-
-function startListening() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { log('Speech recognition not supported. Use Chrome or Edge.','err'); return; }
-  recognition = new SR();
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.lang = 'en-US';
-  recognition.onstart = () => {
-    isListening = true;
+function toggleListening(){isListening?stopListening():startListening();}
+function startListening(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SR){log('Speech recognition not supported. Use Chrome or Edge.','err');return;}
+  recognition=new SR();
+  recognition.continuous=true; recognition.interimResults=true; recognition.lang='en-US';
+  recognition.onstart=()=>{
+    isListening=true;
     setMic('listening','Listening for commands...');
-    document.getElementById('listen-btn').textContent = 'Stop Listening';
-    document.getElementById('listen-btn').className = 'btn-red';
+    document.getElementById('listen-btn').textContent='Stop Listening';
+    document.getElementById('listen-btn').className='btn-red';
     log('Mic active.','info');
   };
-  recognition.onresult = e => {
-    let interim='', final='';
-    for (let i=e.resultIndex; i<e.results.length; i++) {
-      const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) final += t; else interim += t;
+  recognition.onresult=e=>{
+    let interim='',final='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal) final+=t; else interim+=t;
     }
-    document.getElementById('transcript').textContent = (final||interim)||'...';
-    if (final) processCommand(final.trim().toLowerCase());
+    document.getElementById('transcript').textContent=(final||interim)||'...';
+    if(final) processCommand(final.trim().toLowerCase());
   };
-  recognition.onerror = e => {
-    if (e.error==='not-allowed') { setMic('error','Mic access denied.'); log('Mic denied.','err'); }
-    else if (e.error!=='no-speech') log(`Speech error: ${e.error}`,'err');
+  recognition.onerror=e=>{
+    if(e.error==='not-allowed'){setMic('error','Mic access denied.');log('Mic denied.','err');}
+    else if(e.error!=='no-speech') log(`Speech error: ${e.error}`,'err');
   };
-  recognition.onend = () => { if (isListening) recognition.start(); };
+  recognition.onend=()=>{if(isListening) recognition.start();};
   recognition.start();
 }
-
-function stopListening() {
-  isListening = false;
-  if (recognition) recognition.stop();
+function stopListening(){
+  isListening=false; if(recognition) recognition.stop();
   setMic('','Stopped.');
-  document.getElementById('listen-btn').textContent = 'Start Listening';
-  document.getElementById('listen-btn').className = 'btn-purple';
+  document.getElementById('listen-btn').textContent='Start Listening';
+  document.getElementById('listen-btn').className='btn-purple';
   log('Mic stopped.','info');
 }
 
 // ── Command Parser ─────────────────────────────────────────────────────────
-function processCommand(text) {
-  if (/\b(brb|be right back|taking a break)\b/.test(text)) {
-    switchScene(document.getElementById('brb-scene').value.trim() || 'BRB');
+function processCommand(text){
+  if(/\b(brb|be right back|taking a break)\b/.test(text)){
+    switchScene(document.getElementById('brb-scene').value.trim()||'BRB');
     sendChat('Be right back! BibleThump');
     log('BRB','cmd'); return;
   }
-  if (/\b(welcome back|i'?m back|im back|i am back)\b/.test(text)) {
-    if (mainScene) switchScene(mainScene);
+  if(/\b(welcome back|i'?m back|im back|i am back)\b/.test(text)){
+    if(mainScene) switchScene(mainScene);
     sendChat("We're back! Let's gooo 🔥");
     log('Back','cmd'); return;
   }
-  const banMatch = text.match(/\bban\s+(\w+)/);
-  if (banMatch) { banUser(banMatch[1]); return; }
-  const toMatch = text.match(/\btimeout\s+(\w+)/);
-  if (toMatch) { timeoutUser(toMatch[1]); return; }
-  const unbanMatch = text.match(/\bunban\s+(\w+)/);
-  if (unbanMatch) { unbanUser(unbanMatch[1]); return; }
-  const soMatch = text.match(/\b(shoutout|shout out|s\.?o\.?)\s+(\w+)/);
-  if (soMatch) { shoutout(soMatch[2]); return; }
-  const raidMatch = text.match(/\braid\s+(\w+)/);
-  if (raidMatch) { raid(raidMatch[1]); return; }
-  const pollMatch = text.match(/\bpoll\s+(.+)/);
-  if (pollMatch) {
-    const parts = pollMatch[1].split(/\s*,\s*/);
-    if (parts.length >= 3) { startPoll(parts[0], parts.slice(1)); }
-    else { log('Poll format: "poll question, option1, option2"','err'); }
+
+  // Extract command keyword and everything after it
+  const cmdPatterns=[
+    {re:/\bban\s+(.+)/,             title:'Ban user',     fn: u=>banUser(u)},
+    {re:/\btimeout\s+(.+)/,         title:'Timeout user', fn: u=>timeoutUser(u)},
+    {re:/\bunban\s+(.+)/,           title:'Unban user',   fn: u=>unbanUser(u)},
+    {re:/\b(shoutout|shout out|so)\s+(.+)/, title:'Shoutout',   fn: u=>shoutout(u), grp:2},
+    {re:/\braid\s+(.+)/,            title:'Raid',         fn: u=>raid(u)},
+  ];
+
+  for(const {re,title,fn,grp} of cmdPatterns){
+    const m=text.match(re);
+    if(m){
+      const spoken=(m[grp||1]).trim();
+      resolveWithConfirm(spoken, title, fn);
+      return;
+    }
+  }
+
+  const pollMatch=text.match(/\bpoll\s+(.+)/);
+  if(pollMatch){
+    const parts=pollMatch[1].split(/\s*,\s*/);
+    if(parts.length>=3) startPoll(parts[0],parts.slice(1));
+    else log('Poll format: "poll question, option1, option2"','err');
     return;
   }
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
-parseOAuthCallback();   // Check if returning from Twitch OAuth
-tryRestoreSession();    // Restore token from sessionStorage if available
+parseOAuthCallback();
+tryRestoreSession();
 </script>
 </body>
 </html>
